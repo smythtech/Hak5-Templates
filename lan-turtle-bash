@@ -1,0 +1,133 @@
+#!/bin/bash /usr/lib/turtle/turtle_module
+
+VERSION="1.0"
+DESCRIPTION="Template for bash based Lan Turtle modules"
+AUTHOR="Dylan Smyth"
+CONF=/tmp/lan-turtle-bash.form
+
+: ${DIALOG_OK=0}
+: ${DIALOG_CANCEL=1}
+: ${DIALOG_HELP=2}
+: ${DIALOG_EXTRA=3}
+: ${DIALOG_ITEM_HELP=4}
+: ${DIALOG_ESC=255}
+
+############################################################################################
+#                                                                                          #
+# This is a module template for Hak5's Lan Turtle. The important bits have been commented. #
+#                                                                                          #
+# Replace the strings "lan-turtle-bash" and "module" with your module name (no spaces)     #
+#                                                                                          #
+############################################################################################
+
+function start {
+#Create a file we can use to store the pid of any process we create
+touch /tmp/lan-turtle-bash.pid
+
+#Check if the module has a configuration. If not then the module must not have been configured yet
+if [ -s /etc/config/lan-turtle-bash ]
+  then
+    #Get configuration
+    module_host=$(uci get lan-turtle-bash.host)
+    module_port=$(uci get lan-turtle-bash.port)
+    
+    #DO STUFF HERE
+    
+    #Run a command or something. Pipe to 'at' to pass it away from the module manager
+    netcat $module_host $module_port & | at now 
+    
+    #Use pgrep to get the pid of a process 
+    pgrep -f "netcat $module_host $module_port" > /tmp/lan-turtle-bash.pid
+    
+    echo "module started with pid: $(cat /tmp/lan-turtle-bash.pid)"
+      
+    
+  else
+    touch /etc/config/lan-turtle-bash
+    echo "module is not configured"
+fi
+}
+
+function stop {
+  #Use the pid file we created to kill the process
+  touch /tmp/lan-turtle-bash.pid
+  if kill -0 $(cat /tmp/lan-turtle-bash.pid) 2>/dev/null; then
+    echo "Stopping module"
+    kill $(cat /tmp/lan-turtle-bash.pid)
+  else
+    echo "module not running"
+fi
+}
+
+function status {
+  #Return 1 if the module is running, 0 if not.
+  #Use our pid file to test if related background processes are running.
+  if [ -s /tmp/lan-turtle-bash.pid ]; then
+    if kill -0 $(cat /tmp/lan-turtle-bash.pid) 2>/dev/null; then
+      echo "1"
+    else
+      echo "0"
+    fi
+  else
+    echo "0"
+fi
+}
+
+function configure {
+  #If the configuration file exists then load the existing config
+  if [ -s /etc/config/lan-turtle-bash ]
+  then
+    #Loading the existing config
+    module_host=$(uci get lan-turtle-bash.host)
+    module_port=$(uci get lan-turtle-bash.port)
+    
+  else
+    #Otherwise, create the config file and set defaults here.
+    touch /etc/config/lan-turtle-bash
+    module_port='1234'
+  fi
+
+  dialog --ok-label "Submit" \
+    --help-button \
+    --title "module Configuration" \
+    --form "module\n\n\
+Host: Host to do stuff.\n\
+Port: Port to do stuff (Default: 1234)\n \n" 16 60 4\
+    "Host:"      1 1 "$module_host" 1 14 48 0 \
+    "Port:"      2 1 "$module_port" 2 14 48 0 \
+    #The second and fifth columns should be incrimented when adding new lines here.
+    #For example... 
+    #"Thing:"      3 1 "$module_port" 3 14 48 0 \
+    
+  2>$CONF
+
+  return=$?
+  case $return in
+    $DIALOG_OK)
+      cat $CONF | { 
+        #Read the submitted config
+        read -r module_host
+        read -r module_port
+        #Make sure the config file exists
+        touch /etc/config/lan-turtle-bash
+        #Set the config in the file from the variables
+        uci set lan-turtle-bash.host=$module_host
+        uci set lan-turtle-bash.port=$module_port     
+        uci commit lan-turtle-bash
+        rm $CONF
+      };;
+    $DIALOG_CANCEL)
+      rm $CONF
+      clear
+      exit;;
+    $DIALOG_HELP)
+      dialog --title "Help" \
+        --msgbox "\
+The message you want to show when a user hits 'Help'.\n \n
+" 20 60
+      configure
+      ;;
+    $DIALOG_ESC)
+      clear;;
+  esac
+}
